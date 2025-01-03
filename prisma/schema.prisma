@@ -1,0 +1,69 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model AttachmentLink {
+  id        String @id @default(uuid())
+  link_type String
+  title     String
+  url       String
+
+  Profile   Profile? @relation(fields: [profileId], references: [id])
+  profileId String? // optional relationship for user profile links
+
+  Project   Project? @relation(fields: [projectId], references: [id])
+  projectId String? // optional relationship for project links
+}
+
+model Profile {
+  id                   String   @id @default(uuid())
+  email                String   @unique
+  name                 String
+  avatar_url           String?
+  bio                  String   @default("")
+  created_at           DateTime @default(now())
+  active_project_slots Int      @default(1)
+
+  links          AttachmentLink[] // Relation to links posted on profile
+  Collaborations Collaboration[] // Relation to collaborations with projects
+  favorites      Project[]        @relation("ProfileFavorites") // New many-to-many relation to projects
+}
+
+model Project {
+  id           String   @id @default(uuid())
+  name         String
+  description  String   @default("")
+  is_open      Boolean  @default(false)
+  complexity   String
+  roles_open   String[] // Array of role IDs (string)
+  technologies String[] // Array of technology IDs (string)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @default(now())
+
+  links          AttachmentLink[] // Relation to project links
+  Collaborations Collaboration[] // Relation to collaborations with profiles
+  favorited_by   Profile[]        @relation("ProfileFavorites") // New many-to-many relation to profiles
+}
+
+enum CollaborationRelationship {
+  Creator
+  CollaboratorPending
+  CollaboratorAccepted
+  CollaboratorDeclined
+}
+
+model Collaboration {
+  id              String                    @id @default(uuid())
+  profile_id      String
+  project_id      String
+  relation        CollaborationRelationship
+  request_message String?
+
+  Profile Profile @relation(fields: [profile_id], references: [id])
+  Project Project @relation(fields: [project_id], references: [id])
+}
