@@ -88,7 +88,7 @@ export async function getProfileDetails(
  * @param req
  * - body: UpdateProfileDetailsRequestDto
  * @param res
- * - Success: 201 {message: string, data: {success: true}}
+ * - Success: 200 {message: string, data: {success: true}}
  * - Not Found: 404 {message: string}
  * - Error: 500 {message: string}
  * @returns
@@ -129,7 +129,7 @@ export async function updateProfileDetails(
                 logger.info(
                     '[v1 :: profile.controller :: updateProfileDetails()] Success',
                 );
-                res.status(201).json({
+                res.status(200).json({
                     message: 'Profile updated successfully',
                     data: { success: true },
                 });

@@ -21,6 +21,6 @@ router.get('/:userId', getProfileDetails);
  * path - /api/v1/profiles
  * description - Update a user's profile details
  */
-router.put('/:userId/bio', updateProfileDetails);
+router.put('/', updateProfileDetails);
 
 export default router;
