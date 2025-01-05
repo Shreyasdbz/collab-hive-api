@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import authRoutes from './auth/auth.routes';
 import profileRoutes from './profiles/profile.routes';
 import projectRoutes from './projects/project.routes';
 import collaborationRoutes from './collaboration/collaboration.routes';
@@ -12,6 +13,7 @@ router.get('/', (req, res) => {
     });
 });
 
+router.use('/auth', authRoutes);
 router.use('/profiles', profileRoutes);
 router.use('/projects', projectRoutes);
 router.use('/collaboration', collaborationRoutes);
