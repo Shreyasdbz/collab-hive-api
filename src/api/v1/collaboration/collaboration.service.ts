@@ -1,11 +1,11 @@
 import { CollaborationRelationship } from '@prisma/client';
 import { ServiceResponse, ServiceResponseType } from '@models/Response';
-import { ProjectTechnologiesMapping } from '@models/project-mappings';
 import { prisma } from '@config/database.config';
 import {
     GetCreatorProjectCardResponseDto,
     GetCollaboratorProjectCardResponseDto,
     GetCreatorProjectCollaborationRequestsResponseDto,
+    GetProjectCardResponseDtoCollaborator,
 } from './collaboration.dtos';
 import logger from '@utils/logging.util';
 
@@ -14,64 +14,6 @@ import logger from '@utils/logging.util';
  * @class CollaborationService
  */
 export default class CollaborationService {
-    /**
-     *
-     * @param technologies: string[] of keys
-     * @returns Compact text in sentence form
-     */
-    private getTechnologyStackText(technologies: string[]): string {
-        if (technologies.length === 0) {
-            return '';
-        }
-        // Find the technology names from the keys
-        const technologyNamesList = technologies.map((technology) => {
-            const getValue = ProjectTechnologiesMapping.get(technology);
-            if (getValue === undefined) {
-                return '';
-            }
-            return getValue;
-        });
-        // If 1 technology, return it
-        // If 2 technologies, return "Tech1 and Tech2"
-        // If 3 technologies, return "Tech1, Tech2, and Tech3"
-        // If more than 3 technologies, return "Tech1, Tech2, Tech3, and x more"
-        switch (technologyNamesList.length) {
-            case 1:
-                return technologyNamesList[0];
-            case 2:
-                return `${technologyNamesList[0]} and ${technologyNamesList[1]}`;
-            case 3:
-                return `${technologyNamesList[0]}, ${technologyNamesList[1]}, and ${technologyNamesList[2]}`;
-            default:
-                return `${technologyNamesList[0]}, ${technologyNamesList[1]}, ${
-                    technologyNamesList[2]
-                }, and ${technologyNamesList.length - 3} more`;
-        }
-    }
-    private getCollaboratorsText(collaborators: string[]): string {
-        if (collaborators.length === 0) {
-            return '';
-        }
-        // If 1 collaborator, return "Collaborator1"
-        // If 2 collaborators, return "Collaborator1 and Collaborator2"
-        // If 3 collaborators, return "Collaborator1, Collaborator2, and Collaborator3"
-        // If more than 3 collaborators, return "Collaborator1, Collaborator2, Collaborator3, and x more"
-        const collaboratorCount = collaborators.length;
-
-        switch (collaboratorCount) {
-            case 1:
-                return collaborators[0];
-            case 2:
-                return `${collaborators[0]} and ${collaborators[1]}`;
-            case 3:
-                return `${collaborators[0]}, ${collaborators[1]}, and ${collaborators[2]}`;
-            default:
-                return `${collaborators[0]}, ${collaborators[1]}, ${
-                    collaborators[2]
-                }, and ${collaborators.length - 3} more`;
-        }
-    }
-
     /**
      * Gets all collaboration requests for a user where the user is the creator
      * @param userId
@@ -147,11 +89,6 @@ export default class CollaborationService {
                 message: 'Internal server error',
             };
         }
-
-        return {
-            type: ServiceResponseType.INTERNAL_SERVER_ERROR,
-            message: 'Internal server error',
-        };
     }
 
     /**
@@ -222,8 +159,16 @@ export default class CollaborationService {
                             updated_at: true,
                             Collaborations: {
                                 where: {
-                                    relation:
-                                        CollaborationRelationship.CollaboratorAccepted,
+                                    OR: [
+                                        {
+                                            relation:
+                                                CollaborationRelationship.CollaboratorPending,
+                                        },
+                                        {
+                                            relation:
+                                                CollaborationRelationship.CollaboratorAccepted,
+                                        },
+                                    ],
                                 },
                                 include: {
                                     Profile: {
@@ -262,24 +207,34 @@ export default class CollaborationService {
             // Map the results to DTO
             const projectCards: GetCreatorProjectCardResponseDto[] =
                 creatorProjectResults.map((result) => {
+                    const pendingRequests =
+                        result.Project.Collaborations.filter((col) => {
+                            return (
+                                col.relation ===
+                                CollaborationRelationship.CollaboratorPending
+                            );
+                        }).length;
+                    const collaborators: GetProjectCardResponseDtoCollaborator[] =
+                        [];
+                    result.Project.Collaborations.forEach((col) => {
+                        if (
+                            col.relation ===
+                            CollaborationRelationship.CollaboratorAccepted
+                        ) {
+                            collaborators.push({
+                                id: col.Profile.id,
+                                name: col.Profile.name,
+                                avatarUrl: col.Profile.avatar_url || '',
+                            });
+                        }
+                    });
                     return {
                         id: result.Project.id,
                         name: result.Project.name,
-                        technologyStackText: this.getTechnologyStackText(
-                            result.Project.technologies,
-                        ),
-                        collaboratorsText: `${
-                            result.Project.Collaborations.length > 0
-                                ? 'With'
-                                : ''
-                        } ${this.getCollaboratorsText(
-                            result.Project.Collaborations.map(
-                                (collaboration) => {
-                                    return collaboration.Profile.name;
-                                },
-                            ),
-                        )}`,
+                        technologies: result.Project.technologies,
+                        collaborators: collaborators,
                         isOpen: result.Project.is_open,
+                        numberOfActiveJoinRequests: pendingRequests,
                     };
                 });
 
@@ -384,28 +339,37 @@ export default class CollaborationService {
             // Map the results to DTO
             const projectCards: GetCollaboratorProjectCardResponseDto[] =
                 collaboratorProjectResults.map((result) => {
+                    const creator = result.Project.Collaborations.find(
+                        (col) => {
+                            return (
+                                col.relation ===
+                                CollaborationRelationship.Creator
+                            );
+                        },
+                    );
+                    const collaborators: GetProjectCardResponseDtoCollaborator[] =
+                        [];
+                    result.Project.Collaborations.forEach((col) => {
+                        if (
+                            col.relation ===
+                                CollaborationRelationship.CollaboratorAccepted &&
+                            col.Profile.id !== userId
+                        ) {
+                            collaborators.push({
+                                id: col.Profile.id,
+                                name: col.Profile.name,
+                                avatarUrl: col.Profile.avatar_url || '',
+                            });
+                        }
+                    });
+
                     return {
                         id: result.Project.id,
                         name: result.Project.name,
-                        technologyStackText: this.getTechnologyStackText(
-                            result.Project.technologies,
-                        ),
-                        creatorName:
-                            result.Project.Collaborations.find(
-                                (collaboration) => {
-                                    return (
-                                        collaboration.relation ===
-                                        CollaborationRelationship.Creator
-                                    );
-                                },
-                            )?.Profile.name || '',
-                        collaboratorsText: this.getCollaboratorsText(
-                            result.Project.Collaborations.map(
-                                (collaboration) => {
-                                    return collaboration.Profile.name;
-                                },
-                            ),
-                        ),
+                        technologies: result.Project.technologies,
+                        creatorName: creator?.Profile.name || '',
+                        creatorAvatarUrl: creator?.Profile.avatar_url || '',
+                        collaborators: collaborators,
                     };
                 });
 
