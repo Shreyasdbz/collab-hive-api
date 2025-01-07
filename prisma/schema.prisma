@@ -20,6 +20,16 @@ model AttachmentLink {
   projectId String? // optional relationship for project links
 }
 
+model Favorite {
+  id         String   @id @default(uuid())
+  profile_id String
+  project_id String
+  created_at DateTime @default(now())
+
+  Profile Profile @relation(fields: [profile_id], references: [id])
+  Project Project @relation(fields: [project_id], references: [id])
+}
+
 model Profile {
   id                   String   @id @default(uuid())
   email                String   @unique
@@ -30,8 +40,8 @@ model Profile {
   active_project_slots Int      @default(1)
 
   links          AttachmentLink[] // Relation to links posted on profile
-  Collaborations Collaboration[] // Relation to collaborations with projects
-  favorites      Project[]        @relation("ProfileFavorites") // New many-to-many relation to projects
+  collaborations Collaboration[] // Relation to collaborations with projects
+  favorites      Favorite[] // Updated to reference the new Favorite model
 }
 
 model Project {
@@ -46,8 +56,8 @@ model Project {
   updated_at   DateTime @default(now())
 
   links          AttachmentLink[] // Relation to project links
-  Collaborations Collaboration[] // Relation to collaborations with profiles
-  favorited_by   Profile[]        @relation("ProfileFavorites") // New many-to-many relation to profiles
+  collaborations Collaboration[] // Relation to collaborations with profiles
+  favorited_by   Favorite[] // Updated to reference the new Favorite model
 }
 
 enum CollaborationRelationship {
@@ -62,7 +72,9 @@ model Collaboration {
   profile_id      String
   project_id      String
   relation        CollaborationRelationship
-  request_message String?
+  request_message String
+  created_at      DateTime                  @default(now()) // New field
+  updated_at      DateTime                  @default(now()) // New field
 
   Profile Profile @relation(fields: [profile_id], references: [id])
   Project Project @relation(fields: [project_id], references: [id])

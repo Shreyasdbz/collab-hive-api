@@ -12,6 +12,7 @@ import {
 import { prisma } from '@config/database.config';
 import { GetProjectDetailsResponseDtoCollaborationRequest } from './project.dtos';
 import logger from '@utils/logging.util';
+import { GetProfileDetailsResponseDtoLink } from '../profiles/profile.dtos';
 
 /**
  * Project Service - handles all "Project" table related operations
@@ -105,7 +106,7 @@ export default class ProjectService {
                 },
                 include: {
                     favorited_by: true,
-                    Collaborations: {
+                    collaborations: {
                         where: {
                             OR: [
                                 { relation: CollaborationRelationship.Creator },
@@ -159,7 +160,7 @@ export default class ProjectService {
                     let collaborators: GetProjectDetailsResponseDtoPerson[] =
                         [];
 
-                    project.Collaborations.map((collaboration) => {
+                    project.collaborations.map((collaboration) => {
                         if (
                             collaboration.relation ===
                             CollaborationRelationship.Creator
@@ -233,8 +234,9 @@ export default class ProjectService {
                     id: projectId,
                 },
                 include: {
+                    links: true,
                     favorited_by: true,
-                    Collaborations: {
+                    collaborations: {
                         where: {
                             project_id: projectId,
                         },
@@ -273,7 +275,17 @@ export default class ProjectService {
             let collaborationRequests: GetProjectDetailsResponseDtoCollaborationRequest[] =
                 [];
 
-            getProjectResult.Collaborations.map((collaboration) => {
+            let links: GetProfileDetailsResponseDtoLink[] = [];
+            getProjectResult.links.map((link) => {
+                links.push({
+                    id: link.id,
+                    linkType: link.link_type,
+                    linkTitle: link.title,
+                    linkUrl: link.url,
+                });
+            });
+
+            getProjectResult.collaborations.map((collaboration) => {
                 if (
                     collaboration.relation === CollaborationRelationship.Creator
                 ) {
@@ -305,6 +317,23 @@ export default class ProjectService {
                         message: collaboration.request_message
                             ? collaboration.request_message
                             : '',
+                        isDeclined: false,
+                    });
+                } else if (
+                    collaboration.relation ===
+                    CollaborationRelationship.CollaboratorDeclined
+                ) {
+                    collaborationRequests.push({
+                        id: collaboration.Profile.id,
+                        sender: {
+                            id: collaboration.Profile.id,
+                            name: collaboration.Profile.name,
+                            avatarUrl: collaboration.Profile.avatar_url,
+                        },
+                        message: collaboration.request_message
+                            ? collaboration.request_message
+                            : '',
+                        isDeclined: true,
                     });
                 }
             });
@@ -337,6 +366,7 @@ export default class ProjectService {
                 collaborationRequests: collaborationRequests,
                 favoriteCount: getProjectResult.favorited_by.length,
                 userHasFavorited: getUserHasFavorited(),
+                links: links,
             };
 
             return {
@@ -402,6 +432,7 @@ export default class ProjectService {
                     profile_id: userId,
                     project_id: newProjectResult.id,
                     relation: CollaborationRelationship.Creator,
+                    request_message: '',
                 },
             });
             logger.info(
@@ -453,112 +484,86 @@ export default class ProjectService {
         );
 
         try {
-            const currentProjectFavoriteResult =
-                await prisma.project.findUnique({
-                    where: {
-                        id: projectId,
-                    },
-                    include: {
-                        favorited_by: true,
-                        Collaborations: {
-                            where: {
-                                relation: CollaborationRelationship.Creator,
-                            },
-                            select: {
-                                profile_id: true,
-                            },
+            const projectResult = await prisma.project.findUnique({
+                where: {
+                    id: projectId,
+                },
+                include: {
+                    collaborations: {
+                        where: {
+                            relation: CollaborationRelationship.Creator,
                         },
                     },
-                });
-            if (!currentProjectFavoriteResult) {
-                logger.error(
-                    '[v1 :: project.service :: favorite()] Error fetching project',
-                );
+                    favorited_by: true,
+                },
+            });
+            if (!projectResult) {
                 return {
                     type: ServiceResponseType.NOT_FOUND,
                     message: 'Project not found',
                 };
             }
 
-            // Check if user is owner of the project
-            if (
-                userId ===
-                currentProjectFavoriteResult.Collaborations[0].profile_id
-            ) {
-                logger.warn(
-                    '[v1 :: project.service :: favorite()] User is owner of the project',
-                );
-                return {
-                    type: ServiceResponseType.FORBIDDEN,
-                    message: 'You cannot favorite your own project',
-                };
-            }
+            const userHasFavoritedProject = projectResult.favorited_by.some(
+                (user) => user.id === userId,
+            );
 
-            // Check if the user has already favorited the project
-            const userHasFavorited =
-                currentProjectFavoriteResult.favorited_by.some(
-                    (user) => user.id === userId,
-                );
-            if (userHasFavorited) {
-                // If the user has already favorited the project, remove the favorite
-                const removeFavoriteResult = await prisma.project.update({
-                    where: {
-                        id: projectId,
-                    },
+            if (!userHasFavoritedProject) {
+                // User has not favorited the project, add the favorite
+                // --> check if user is owner of project
+                if (projectResult.collaborations[0].profile_id === userId) {
+                    return {
+                        type: ServiceResponseType.FORBIDDEN,
+                        message: 'Cannot favorite your own project',
+                    };
+                }
+                // Create new favorite
+                const newFavoriteResult = await prisma.favorite.create({
                     data: {
-                        favorited_by: {
-                            disconnect: {
-                                id: userId,
-                            },
-                        },
+                        profile_id: userId,
+                        project_id: projectId,
                     },
                 });
-                if (!removeFavoriteResult) {
+                if (!newFavoriteResult) {
                     logger.error(
-                        '[v1 :: project.service :: favorite()] Error removing favorite',
+                        '[v1 :: project.service :: favorite()] Error creating new favorite',
                     );
                     return {
                         type: ServiceResponseType.INTERNAL_SERVER_ERROR,
-                        message: 'Error removing favorite',
+                        message: 'Internal server error',
                     };
                 } else {
                     logger.info(
-                        '[v1 :: project.service :: favorite()] Favorite removed successfully',
+                        '[v1 :: project.service :: favorite()] Project favorited successfully',
                     );
                     return {
                         type: ServiceResponseType.SUCCESS,
-                        data: 'Removed project from favorites',
+                        data: 'Project added to favorites.',
                     };
                 }
             } else {
-                // If the user has not favorited the project, add the favorite
-                const addFavoriteResult = await prisma.project.update({
+                // User has already favorited the project, remove the favorite
+                const deleteFavoriteResult = await prisma.favorite.deleteMany({
                     where: {
-                        id: projectId,
-                    },
-                    data: {
-                        favorited_by: {
-                            connect: {
-                                id: userId,
-                            },
-                        },
+                        profile_id: userId,
+                        project_id: projectId,
                     },
                 });
-                if (!addFavoriteResult) {
+                if (!deleteFavoriteResult) {
                     logger.error(
-                        '[v1 :: project.service :: favorite()] Error adding favorite',
+                        '[v1 :: project.service :: favorite()] Error deleting favorite',
                     );
                     return {
                         type: ServiceResponseType.INTERNAL_SERVER_ERROR,
-                        message: 'Error adding favorite',
+                        message: 'Internal server error',
                     };
                 } else {
                     logger.info(
-                        '[v1 :: project.service :: favorite()] Favorite added successfully',
+                        '[v1 :: project.service :: favorite()] Project removed from favorites successfully',
                     );
                     return {
                         type: ServiceResponseType.SUCCESS,
-                        data: 'Added project to favorites',
+                        data: 'Project removed from favorites.',
                     };
                 }
             }
@@ -582,7 +587,7 @@ export default class ProjectService {
      * @param complexity? - Project complexity
      * @param roles? - Project open roles
      * @param technologies? - Project technologies
-     * @returns {Promise<ServiceResponse<boolean>>}
+     * @returns {Promise<ServiceResponse<string>>}
      */
     public async updateDetails({
         projectId,
@@ -600,7 +605,7 @@ export default class ProjectService {
         complexity?: string;
         roles?: string[];
         technologies?: string[];
-    }): Promise<ServiceResponse<boolean>> {
+    }): Promise<ServiceResponse<string>> {
         logger.info(
             `[v1 :: project.service :: updateDetails()] Init with projectId: ${projectId}`,
         );
@@ -657,7 +662,7 @@ export default class ProjectService {
                 );
                 return {
                     type: ServiceResponseType.SUCCESS,
-                    data: true,
+                    data: 'Project updated successfully',
                 };
             }
         } catch (error) {
@@ -674,13 +679,13 @@ export default class ProjectService {
     /**
      * Deletes a project
      * @param projectId - Project ID
-     * @returns {Promise<ServiceResponse<boolean>>}
+     * @returns {Promise<ServiceResponse<string>>}
      */
     public async delete({
         projectId,
     }: {
         projectId: string;
-    }): Promise<ServiceResponse<boolean>> {
+    }): Promise<ServiceResponse<string>> {
         logger.info('[v1 :: project.service :: delete()] Init');
         logger.info(
             `[v1 :: project.service :: delete()] projectId: ${projectId}`,
@@ -725,13 +730,104 @@ export default class ProjectService {
             );
             return {
                 type: ServiceResponseType.SUCCESS,
-                data: true,
+                data: 'Project deleted.',
             };
         } catch (error) {
             logger.error(`[v1 :: project.service :: delete()] Error: ${error}`);
             return {
                 type: ServiceResponseType.INTERNAL_SERVER_ERROR,
                 message: 'Project delete failed',
+            };
+        }
+    }
+
+    /**
+     * Adds a new link to a project
+     * @param projectId - Project ID
+     * @param linkType - Link type
+     * @param linkTitle - Link title
+     * @param linkUrl - Link URL
+     * @returns {Promise<ServiceResponse<string>>}
+     */
+    public async addLink({
+        projectId,
+        linkType,
+        linkTitle,
+        linkUrl,
+    }: {
+        projectId: string;
+        linkType: string;
+        linkTitle: string;
+        linkUrl: string;
+    }): Promise<ServiceResponse<string>> {
+        try {
+            const newLinkResult = await prisma.attachmentLink.create({
+                data: {
+                    projectId: projectId,
+                    link_type: linkType,
+                    title: linkTitle,
+                    url: linkUrl,
+                },
+            });
+            if (!newLinkResult) {
+                return {
+                    type: ServiceResponseType.INTERNAL_SERVER_ERROR,
+                    message: 'Internal server error',
+                };
+            } else {
+                return {
+                    type: ServiceResponseType.SUCCESS,
+                    data: 'Link added successfully',
+                };
+            }
+        } catch (error) {
+            return {
+                type: ServiceResponseType.INTERNAL_SERVER_ERROR,
+                message: 'Internal server error',
+            };
+        }
+    }
+
+    /**
+     * Deletes a link from a project
+     * @param linkId - Link ID
+     * @returns {Promise<ServiceResponse<string>>}
+     */
+    public async deleteLink({
+        linkId,
+    }: {
+        linkId: string;
+    }): Promise<ServiceResponse<string>> {
+        try {
+            const deleteLinkResult = await prisma.attachmentLink.delete({
+                where: {
+                    id: linkId,
+                },
+            });
+            if (!deleteLinkResult) {
+                logger.error(
+                    '[v1 :: project.service :: deleteLink()] Error deleting link',
+                );
+                return {
+                    type: ServiceResponseType.INTERNAL_SERVER_ERROR,
+                    message: 'Internal server error',
+                };
+            } else {
+                logger.info(
+                    '[v1 :: project.service :: deleteLink()] Link deleted successfully',
+                );
+                return {
+                    type: ServiceResponseType.SUCCESS,
+                    data: 'Link deleted successfully',
+                };
+            }
+        } catch (error) {
+            logger.error(
+                `[v1 :: project.service :: deleteLink()] Error: ${error}`,
+            );
+            return {
+                type: ServiceResponseType.INTERNAL_SERVER_ERROR,
+                message: 'Internal server error',
             };
         }
     }

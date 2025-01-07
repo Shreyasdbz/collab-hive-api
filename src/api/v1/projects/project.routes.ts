@@ -6,6 +6,8 @@ import {
     toggleFavoriteProject,
     updateProjectDetails,
     deleteProject,
+    createProjectLink,
+    deleteProjectLink,
 } from './project.controller';
 
 const router = Router();
@@ -68,5 +70,26 @@ router.put('/:projectId', updateProjectDetails);
  * - projectId: string
  */
 router.delete('/:projectId', deleteProject);
+
+/**
+ * method - POST
+ * path - /api/v1/projects/:projectId/links
+ * Params:
+ * - projectId: string
+ * Body:
+ * - linkType: string
+ * - linkTitle: string
+ * - linkUrl: string
+ */
+router.post('/:projectId/links', createProjectLink);
+
+/**
+ * method - DELETE
+ * path - /api/v1/projects/:projectId/links/:linkId
+ * Params:
+ * - projectId: string
+ * - linkId: string
+ */
+router.delete('/:projectId/links/:linkId', deleteProjectLink);
 
 export default router;

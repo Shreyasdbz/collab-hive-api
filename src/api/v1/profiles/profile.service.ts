@@ -30,19 +30,26 @@ export default class ProfileService {
                     id: userId,
                 },
                 include: {
+                    // Get projects that the user has favorited
                     favorites: {
                         include: {
-                            Collaborations: {
-                                where: {
-                                    relation: CollaborationRelationship.Creator,
-                                },
+                            Project: {
                                 include: {
-                                    Profile: true,
+                                    collaborations: {
+                                        where: {
+                                            relation:
+                                                CollaborationRelationship.Creator,
+                                        },
+                                        include: {
+                                            Profile: true,
+                                        },
+                                    },
                                 },
                             },
                         },
                     },
-                    Collaborations: {
+                    // Get all projects that the user is a part of
+                    collaborations: {
                         where: {
                             OR: [
                                 { relation: CollaborationRelationship.Creator },
@@ -55,25 +62,21 @@ export default class ProfileService {
                         include: {
                             Project: {
                                 include: {
-                                    Collaborations: {
+                                    collaborations: {
                                         where: {
                                             relation:
                                                 CollaborationRelationship.Creator,
                                         },
                                         include: {
-                                            Profile: {
-                                                select: {
-                                                    id: true,
-                                                    name: true,
-                                                    avatar_url: true,
-                                                },
-                                            },
+                                            Profile: true,
                                         },
                                     },
                                 },
                             },
                         },
                     },
+                    // links
+                    links: true,
                 },
             });
 
@@ -91,51 +94,71 @@ export default class ProfileService {
                 );
             }
 
+            const profileLinks = profileResult.links.map((link) => {
+                return {
+                    id: link.id,
+                    linkType: link.link_type,
+                    linkTitle: link.title,
+                    linkUrl: link.url,
+                };
+            });
+
             const favorites: GetProfileDetailsResponseDtoProjectCard[] = [];
             const creatorProjects: GetProfileDetailsResponseDtoProjectCard[] =
                 [];
             const collaborationProjects: GetProfileDetailsResponseDtoProjectCard[] =
                 [];
 
+            // map favorites
             if (profileResult.favorites && profileResult.favorites.length > 0) {
-                // map favorites
-                profileResult.favorites.forEach((project) => {
-                    const creator = project.Collaborations[0].Profile;
-                    const projectCard: GetProfileDetailsResponseDtoProjectCard =
-                        {
-                            id: project.id,
-                            name: project.name,
-                            creatorName: creator.name,
-                            creatorAvatarUrl: creator.avatar_url,
-                            updatedAt: project.updated_at.toISOString(),
-                            isOpen: project.is_open,
-                        };
-                    favorites.push(projectCard);
+                profileResult.favorites.forEach((fav) => {
+                    favorites.push({
+                        id: fav.Project.id,
+                        name: fav.Project.name,
+                        creatorName: fav.Project.collaborations[0].Profile.name,
+                        creatorAvatarUrl:
+                            fav.Project.collaborations[0].Profile.avatar_url,
+                        updatedAt: fav.Project.updated_at.toISOString(),
+                        isOpen: fav.Project.is_open,
+                    });
                 });
             }
 
-            if (profileResult.Collaborations) {
+            if (profileResult.collaborations) {
                 // map creator and collaborator projects
-                profileResult.Collaborations.forEach((collaboration) => {
-                    const project = collaboration.Project;
-                    const projectCard: GetProfileDetailsResponseDtoProjectCard =
-                        {
-                            id: project.id,
-                            name: project.name,
-                            creatorName: project.Collaborations[0].Profile.name,
-                            creatorAvatarUrl:
-                                project.Collaborations[0].Profile.avatar_url,
-                            updatedAt: project.updated_at.toISOString(),
-                            isOpen: project.is_open,
-                        };
-
+                profileResult.collaborations.forEach((collaboration) => {
                     if (
                         collaboration.relation ===
                         CollaborationRelationship.Creator
                     ) {
-                        creatorProjects.push(projectCard);
-                    } else {
-                        collaborationProjects.push(projectCard);
+                        // Add to creator projects
+                        creatorProjects.push({
+                            id: collaboration.Project.id,
+                            name: collaboration.Project.name,
+                            creatorName: profileResult.name,
+                            creatorAvatarUrl: profileResult.avatar_url,
+                            updatedAt:
+                                collaboration.Project.updated_at.toISOString(),
+                            isOpen: collaboration.Project.is_open,
+                        });
+                    } else if (
+                        collaboration.relation ===
+                        CollaborationRelationship.CollaboratorAccepted
+                    ) {
+                        // Add to collaboration projects
+                        collaborationProjects.push({
+                            id: collaboration.Project.id,
+                            name: collaboration.Project.name,
+                            creatorName:
+                                collaboration.Project.collaborations[0].Profile
+                                    .name,
+                            creatorAvatarUrl:
+                                collaboration.Project.collaborations[0].Profile
+                                    .avatar_url,
+                            updatedAt:
+                                collaboration.Project.updated_at.toISOString(),
+                            isOpen: collaboration.Project.is_open,
+                        });
                     }
                 });
             }
@@ -150,6 +173,7 @@ export default class ProfileService {
                 activeProjectSlots: profileResult.active_project_slots,
                 creatorProjects,
                 collaborationProjects,
+                links: profileLinks,
             };
 
             return {
@@ -173,7 +197,7 @@ export default class ProfileService {
      * @param name?: string
      * @param bio?: string
      * @param avatarUrl?: string | null
-     * @returns {Promise<ServiceResponse<boolean>>}
+     * @returns {Promise<ServiceResponse<string>>}
      */
     public async updateDetails({
         userId,
@@ -185,7 +209,7 @@ export default class ProfileService {
         name?: string;
         avatarUrl?: string | null;
         bio?: string;
-    }): Promise<ServiceResponse<boolean>> {
+    }): Promise<ServiceResponse<string>> {
         logger.info('[v1 :: profile.service :: updateDetails()] Init');
         logger.info(
             `[v1 :: profile.service :: updateDetails()] userId: ${userId}`,
@@ -224,12 +248,123 @@ export default class ProfileService {
                 );
                 return {
                     type: ServiceResponseType.SUCCESS,
-                    data: true,
+                    data: 'User details updated',
                 };
             }
         } catch (error) {
             logger.error(
                 `[v1 :: profile.service :: updateDetails()] Error: ${error}`,
+            );
+            return {
+                type: ServiceResponseType.INTERNAL_SERVER_ERROR,
+                message: 'Internal server error',
+            };
+        }
+    }
+
+    /**
+     * @description Add a link to the user's profile
+     * @param userId: string
+     * @param linkType: string - identifier for the link
+     * @param linkUrl: string - full site url
+     * @returns {Promise<ServiceResponse<string>>}
+     */
+    public async addLink({
+        userId,
+        linkType,
+        linkTitle,
+        linkUrl,
+    }: {
+        userId: string;
+        linkType: string;
+        linkTitle: string;
+        linkUrl: string;
+    }): Promise<ServiceResponse<string>> {
+        logger.info(
+            `[v1 :: profile.service :: addLink()] Init with userId: ${userId}, linkType: ${linkType}, linkUrl: ${linkUrl}`,
+        );
+
+        try {
+            const linkResult = await prisma.attachmentLink.create({
+                data: {
+                    link_type: linkType,
+                    title: linkTitle,
+                    url: linkUrl,
+                    profileId: userId,
+                },
+            });
+            if (!linkResult) {
+                logger.error(
+                    '[v1 :: profile.service :: addLink()] Error adding link',
+                );
+                return {
+                    type: ServiceResponseType.INTERNAL_SERVER_ERROR,
+                    message: 'Internal server error',
+                };
+            } else {
+                logger.info(
+                    '[v1 :: profile.service :: addLink()] Link added successfully',
+                );
+                return {
+                    type: ServiceResponseType.SUCCESS,
+                    data: 'Link added successfully',
+                };
+            }
+        } catch (error) {
+            logger.error(
+                `[v1 :: profile.service :: addLink()] Error: ${error}`,
+            );
+            return {
+                type: ServiceResponseType.INTERNAL_SERVER_ERROR,
+                message: 'Internal server error',
+            };
+        }
+    }
+
+    /**
+     * @description Remove a link from the user's profile
+     * @param userId: string
+     * @param linkId: string
+     * @returns {Promise<ServiceResponse<string>>}
+     */
+    public async removeLink({
+        userId,
+        linkId,
+    }: {
+        userId: string;
+        linkId: string;
+    }): Promise<ServiceResponse<string>> {
+        logger.info(
+            `[v1 :: profile.service :: removeLink()] Init with userId: ${userId}, linkId: ${linkId}`,
+        );
+
+        try {
+            const linkResult = await prisma.attachmentLink.delete({
+                where: {
+                    id: linkId,
+                    profileId: userId,
+                },
+            });
+            if (!linkResult) {
+                logger.error(
+                    '[v1 :: profile.service :: removeLink()] Error removing link',
+                );
+                return {
+                    type: ServiceResponseType.INTERNAL_SERVER_ERROR,
+                    message: 'Internal server error',
+                };
+            } else {
+                logger.info(
+                    '[v1 :: profile.service :: removeLink()] Link removed successfully',
+                );
+                return {
+                    type: ServiceResponseType.SUCCESS,
+                    data: 'Link removed successfully',
+                };
+            }
+        } catch (error) {
+            logger.error(
+                `[v1 :: profile.service :: removeLink()] Error: ${error}`,
             );
             return {
                 type: ServiceResponseType.INTERNAL_SERVER_ERROR,

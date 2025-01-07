@@ -4,7 +4,10 @@ import { supabase } from '@config/supabase.config';
 import logger from '@utils/logging.util';
 import ProjectService from './project.service';
 import CollaborationService from '../collaboration/collaboration.service';
-import { UpdateProjectDetailsRequestDto } from './project.dtos';
+import {
+    ModifyProjectStandardResponseDto,
+    UpdateProjectDetailsRequestDto,
+} from './project.dtos';
 
 /**
  * [GET] /api/v1/projects?sortBy=string&roles=string[]&technologies=string[]&complexities=string[]&technologies=string[]&page=number&limit=number
@@ -143,7 +146,7 @@ export async function getProjectDetails(
  * @param req body { name: string }
  * @param res response { project url }
  * @returns
- * - Success: 201 { projectId: string }
+ * - Success: 201 { ModifyProjectStandardResponseDto }
  * - Unauthorized: 401 { message: string }
  * - Error: 500 { message: string }
  */
@@ -188,7 +191,11 @@ export async function createNewProject(
 
         switch (projectIdResult.type) {
             case ServiceResponseType.SUCCESS:
-                res.status(201).send({ projectId: projectIdResult.data });
+                const successResponse: ModifyProjectStandardResponseDto = {
+                    message: 'Success',
+                    projectId: projectIdResult.data,
+                };
+                res.status(201).send({ data: successResponse });
                 break;
             default:
                 res.status(500).send({ message: 'Something went wrong :(' });
@@ -208,7 +215,7 @@ export async function createNewProject(
  * @param req params { projectId: string }
  * @param res
  * @returns
- * - Success: 200 { message: string }
+ * - Success: 200 { ModifyProjectStandardResponseDto }
  * - Unauthorized: 401 { message: string }
  * - Forbidden: 403 { message: string }
  * - Error: 500 { message: string }
@@ -251,7 +258,11 @@ export async function toggleFavoriteProject(
         });
         switch (toggleResult.type) {
             case ServiceResponseType.SUCCESS:
-                res.status(200).send({ message: 'Success' });
+                const successResponse: ModifyProjectStandardResponseDto = {
+                    message: toggleResult.data,
+                    projectId: projectId,
+                };
+                res.status(200).send({ data: successResponse });
                 break;
             case ServiceResponseType.NOT_FOUND:
                 res.status(404).send({ message: toggleResult.message });
@@ -322,7 +333,11 @@ export async function updateProjectDetails(
         });
         switch (updateResult.type) {
             case ServiceResponseType.SUCCESS:
-                res.status(200).send({ message: 'Success' });
+                const successResponse: ModifyProjectStandardResponseDto = {
+                    message: updateResult.data,
+                    projectId,
+                };
+                res.status(200).send({ data: successResponse });
                 break;
             default:
                 res.status(500).send({ message: 'Something went wrong :(' });
@@ -342,7 +357,7 @@ export async function updateProjectDetails(
  * @param req params { projectId: string }
  * @param res
  * @returns
- * - Success: 204 { message: string }
+ * - Success: 204 { ModifyProjectStandardResponseDto }
  * - Forbidden: 403 { message: string }
  * - Error: 500 { message: string }
  */
@@ -392,7 +407,11 @@ export async function deleteProject(
         });
         switch (deleteResult.type) {
             case ServiceResponseType.SUCCESS:
-                res.status(204).send({ message: 'Success' });
+                const successResponse: ModifyProjectStandardResponseDto = {
+                    message: deleteResult.data,
+                    projectId: projectId,
+                };
+                res.status(204).send({ data: successResponse });
                 break;
             default:
                 res.status(500).send({ message: 'Something went wrong :(' });
@@ -401,6 +420,172 @@ export async function deleteProject(
     } catch (error) {
         logger.error(
             `[v1 :: project.controller :: deleteProject()] Error: ${error}`,
+        );
+        res.status(500).send({ message: 'Something went wrong :(' });
+    }
+}
+
+/**
+ * [POST] /api/v1/projects/:projectId/links
+ * Add a link to a project
+ * @param req params { projectId: string }
+ * @param req body { CreateProjectLinkRequestDto }
+ * @param res
+ * @returns
+ * - Success: 201 { ModifyProjectStandardResponseDto }
+ * - Unauthorized: 401 { message: string }
+ * - Forbidden: 403 { message: string }
+ * - Error: 500 { message: string }
+ */
+export async function createProjectLink(
+    req: Request,
+    res: Response,
+): Promise<void> {
+    logger.info('[v1 :: project.controller :: createProjectLink()] Init');
+
+    // Grab project ID from request params and validate
+    const { projectId } = req.params;
+    if (!projectId) {
+        res.status(400).send({ message: 'No project ID in URL' });
+        return;
+    }
+    logger.info(
+        `[v1 :: project.controller :: createProjectLink()] Project ID: ${projectId}`,
+    );
+
+    // Grab authorization header from request and validate
+    const authHeader = req.headers.authorization;
+    const { data } = await supabase.auth.getUser(authHeader as string);
+    const userId = data?.user?.id;
+    if (!userId) {
+        res.status(401).send({ message: 'Unauthorized' });
+        return;
+    }
+
+    // Parse and validate body
+    const { linkType, linkTitle, linkUrl } = req.body;
+    if (!linkType || !linkTitle || !linkUrl) {
+        res.status(400).send({ message: 'Missing link information' });
+        return;
+    }
+
+    try {
+        const projectService = new ProjectService();
+        const collaborationService = new CollaborationService();
+
+        // Verify permissions
+        const userHasPermission =
+            await collaborationService.validateUserPermissionForProjectEdit({
+                userId: userId,
+                projectId,
+            });
+        if (!userHasPermission) {
+            res.status(403).send({ message: 'Forbidden' });
+            return;
+        }
+
+        // Perform link creation
+        const createLinkResult = await projectService.addLink({
+            projectId,
+            linkType,
+            linkTitle,
+            linkUrl,
+        });
+        switch (createLinkResult.type) {
+            case ServiceResponseType.SUCCESS:
+                const successResponse: ModifyProjectStandardResponseDto = {
+                    message: createLinkResult.data,
+                    projectId: projectId,
+                };
+                res.status(201).send({ data: successResponse });
+                break;
+            default:
+                res.status(500).send({ message: 'Something went wrong :(' });
+                break;
+        }
+    } catch (error) {
+        logger.error(
+            `[v1 :: project.controller :: createProjectLink()] Error: ${error}`,
+        );
+        res.status(500).send({ message: 'Something went wrong :(' });
+    }
+}
+
+/**
+ * [DELETE] /api/v1/projects/:projectId/links/:linkId
+ * Remove a link from a project
+ * @param req params { projectId: string, linkId: string }
+ * @param res
+ * @returns
+ * - Success: 200 { ModifyProjectStandardResponseDto }
+ * - Bad Request: 400 { message: string }
+ * - Unauthorized: 401 { message: string }
+ * - Forbidden: 403 { message: string }
+ * - Not Found: 404 { message: string }
+ * - Error: 500 { message: string }
+ */
+export async function deleteProjectLink(
+    req: Request,
+    res: Response,
+): Promise<void> {
+    logger.info('[v1 :: project.controller :: deleteProjectLink()] Init');
+
+    // Grab project ID and link ID from request params and validate
+    const { projectId, linkId } = req.params;
+    if (!projectId || !linkId) {
+        res.status(400).send({ message: 'No project or link ID in URL' });
+        return;
+    }
+    logger.info(
+        `[v1 :: project.controller :: deleteProjectLink()] Project ID: ${projectId}, Link ID: ${linkId}`,
+    );
+
+    // Grab authorization header from request and validate
+    const authHeader = req.headers.authorization;
+    const { data } = await supabase.auth.getUser(authHeader as string);
+    const userId = data?.user?.id;
+    if (!userId) {
+        res.status(401).send({ message: 'Unauthorized' });
+        return;
+    }
+
+    try {
+        const projectService = new ProjectService();
+        const collaborationService = new CollaborationService();
+
+        // Verify permissions
+        const userHasPermission =
+            await collaborationService.validateUserPermissionForProjectEdit({
+                userId: userId,
+                projectId,
+            });
+        if (!userHasPermission) {
+            res.status(403).send({ message: 'Forbidden' });
+            return;
+        }
+
+        // Perform link deletion
+        const deleteLinkResult = await projectService.deleteLink({
+            linkId,
+        });
+        switch (deleteLinkResult.type) {
+            case ServiceResponseType.SUCCESS:
+                const successResponse: ModifyProjectStandardResponseDto = {
+                    message: deleteLinkResult.data,
+                    projectId: projectId,
+                };
+                res.status(200).send({ data: successResponse });
+                break;
+            case ServiceResponseType.NOT_FOUND:
+                res.status(404).send({ message: deleteLinkResult.message });
+                break;
+            default:
+                res.status(500).send({ message: 'Something went wrong :(' });
+                break;
+        }
+    } catch (error) {
+        logger.error(
+            `[v1 :: project.controller :: deleteProjectLink()] Error: ${error}`,
         );
         res.status(500).send({ message: 'Something went wrong :(' });
     }

@@ -39,7 +39,7 @@ export default class CollaborationService {
                         select: {
                             id: true,
                             name: true,
-                            Collaborations: {
+                            collaborations: {
                                 where: {
                                     relation:
                                         CollaborationRelationship.CollaboratorPending,
@@ -69,7 +69,7 @@ export default class CollaborationService {
                     return {
                         projectId: result.Project.id,
                         projectName: result.Project.name,
-                        numberOfRequests: result.Project.Collaborations.length,
+                        numberOfRequests: result.Project.collaborations.length,
                     };
                 });
             logger.info(
@@ -157,7 +157,7 @@ export default class CollaborationService {
                             is_open: true,
                             technologies: true,
                             updated_at: true,
-                            Collaborations: {
+                            collaborations: {
                                 where: {
                                     OR: [
                                         {
@@ -208,7 +208,7 @@ export default class CollaborationService {
             const projectCards: GetCreatorProjectCardResponseDto[] =
                 creatorProjectResults.map((result) => {
                     const pendingRequests =
-                        result.Project.Collaborations.filter((col) => {
+                        result.Project.collaborations.filter((col) => {
                             return (
                                 col.relation ===
                                 CollaborationRelationship.CollaboratorPending
@@ -216,7 +216,7 @@ export default class CollaborationService {
                         }).length;
                     const collaborators: GetProjectCardResponseDtoCollaborator[] =
                         [];
-                    result.Project.Collaborations.forEach((col) => {
+                    result.Project.collaborations.forEach((col) => {
                         if (
                             col.relation ===
                             CollaborationRelationship.CollaboratorAccepted
@@ -285,7 +285,7 @@ export default class CollaborationService {
                                 is_open: true,
                                 technologies: true,
                                 updated_at: true,
-                                Collaborations: {
+                                collaborations: {
                                     where: {
                                         OR: [
                                             {
@@ -339,7 +339,7 @@ export default class CollaborationService {
             // Map the results to DTO
             const projectCards: GetCollaboratorProjectCardResponseDto[] =
                 collaboratorProjectResults.map((result) => {
-                    const creator = result.Project.Collaborations.find(
+                    const creator = result.Project.collaborations.find(
                         (col) => {
                             return (
                                 col.relation ===
@@ -349,7 +349,7 @@ export default class CollaborationService {
                     );
                     const collaborators: GetProjectCardResponseDtoCollaborator[] =
                         [];
-                    result.Project.Collaborations.forEach((col) => {
+                    result.Project.collaborations.forEach((col) => {
                         if (
                             col.relation ===
                                 CollaborationRelationship.CollaboratorAccepted &&

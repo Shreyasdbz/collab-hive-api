@@ -3,7 +3,11 @@ import { ServiceResponseType } from '@models/Response';
 import { supabase } from '@config/supabase.config';
 import logger from '@utils/logging.util';
 import ProfileService from './profile.service';
-import { UpdateProfileDetailsRequestDto } from './profile.dtos';
+import {
+    CreateProfileLinkRequestDto,
+    ModifyProfileStandardResponseDto,
+    UpdateProfileDetailsRequestDto,
+} from './profile.dtos';
 
 /**
  * [GET] /api/v1/profiles/:userId
@@ -40,7 +44,7 @@ export async function getProfileDetails(
                 logger.warn(
                     '[v1 :: profile.controller :: getProfileDetails()] Could not parse userId from token',
                 );
-                res.status(401).json({ message: 'Unauthorized' });
+                res.status(401).send({ message: 'Unauthorized' });
                 return;
             } else {
                 userId = userIdFromToken;
@@ -57,21 +61,21 @@ export async function getProfileDetails(
                 logger.info(
                     '[v1 :: profile.controller :: getProfileDetails()] Success',
                 );
-                res.status(200).json(profileDetailsResult.data);
+                res.status(200).send(profileDetailsResult.data);
                 break;
 
             case ServiceResponseType.NOT_FOUND:
                 logger.info(
                     '[v1 :: profile.controller :: getProfileDetails()] Profile not found',
                 );
-                res.status(404).json({ message: 'Profile not found' });
+                res.status(404).send({ message: 'Profile not found' });
                 break;
 
             default:
                 logger.error(
                     '[v1 :: profile.controller :: getProfileDetails()] Default case',
                 );
-                res.status(500).json({ message: 'Something went wrong :(' });
+                res.status(500).send({ message: 'Something went wrong :(' });
                 break;
         }
     } catch (error) {
@@ -79,7 +83,7 @@ export async function getProfileDetails(
             '[v1 :: profile.controller :: getProfileDetails()] Error',
             error,
         );
-        res.status(500).json({ message: 'Something went wrong :(' });
+        res.status(500).send({ message: 'Something went wrong :(' });
     }
 }
 
@@ -88,7 +92,7 @@ export async function getProfileDetails(
  * @param req
  * - body: UpdateProfileDetailsRequestDto
  * @param res
- * - Success: 200 {message: string, data: {success: true}}
+ * - Success: 200 { ModifyProfileStandardResponseDto }
  * - Not Found: 404 {message: string}
  * - Error: 500 {message: string}
  * @returns
@@ -112,7 +116,7 @@ export async function updateProfileDetails(
             logger.warn(
                 '[v1 :: profile.controller :: updateProfileDetails()] Could not parse userId from token',
             );
-            res.status(401).json({ message: 'Unauthorized' });
+            res.status(401).send({ message: 'Unauthorized' });
             return;
         }
 
@@ -129,24 +133,25 @@ export async function updateProfileDetails(
                 logger.info(
                     '[v1 :: profile.controller :: updateProfileDetails()] Success',
                 );
-                res.status(200).json({
-                    message: 'Profile updated successfully',
-                    data: { success: true },
-                });
+                const successResponse: ModifyProfileStandardResponseDto = {
+                    message: updatedDetails.data,
+                    profileId: userId,
+                };
+                res.status(200).send({ data: successResponse });
                 break;
 
             case ServiceResponseType.NOT_FOUND:
                 logger.info(
                     '[v1 :: profile.controller :: updateProfileDetails()] Profile not found',
                 );
-                res.status(404).json({ message: 'Profile not found' });
+                res.status(404).send({ message: 'Profile not found' });
                 break;
 
             default:
                 logger.error(
                     '[v1 :: profile.controller :: updateProfileDetails()] Default case',
                 );
-                res.status(500).json({ message: 'Something went wrong :(' });
+                res.status(500).send({ message: 'Something went wrong :(' });
                 break;
         }
     } catch (err) {
@@ -154,6 +159,168 @@ export async function updateProfileDetails(
             '[v1 :: profile.controller :: updateProfileDetails()] Error',
             err,
         );
-        res.status(500).json({ message: 'Something went wrong :(' });
+        res.status(500).send({ message: 'Something went wrong :(' });
+    }
+}
+
+/**
+ * [POST] /api/v1/profiles/links
+ * @param req
+ * - body: { CreateProfileLinkRequestDto }
+ * @param res
+ * - Success: 201 { ModifyProfileStandardResponseDto }
+ * - Bad Request: 400 {message: string}
+ * - Error: 500 {message: string}
+ */
+export async function createProfileLink(
+    req: Request,
+    res: Response,
+): Promise<void> {
+    logger.info('[v1 :: profile.controller :: createProfileLink()] Init');
+    try {
+        // Grab authorization header from request
+        const authHeader = req.headers.authorization;
+        const { data } = await supabase.auth.getUser(authHeader as string);
+        const userId = data?.user?.id;
+        if (!userId) {
+            logger.warn(
+                '[v1 :: profile.controller :: createProfileLink()] Could not parse userId from token',
+            );
+            res.status(401).send({ message: 'Unauthorized' });
+            return;
+        }
+
+        // Grab and validate request body
+        const { linkType, linkTitle, linkUrl } =
+            req.body as CreateProfileLinkRequestDto;
+        if (!linkType || !linkTitle || !linkUrl) {
+            logger.warn(
+                '[v1 :: profile.controller :: createProfileLink()] Missing required fields',
+            );
+            res.status(400).send({ message: 'Missing required fields' });
+            return;
+        }
+
+        const profileService = new ProfileService();
+        const result = await profileService.addLink({
+            userId,
+            linkType,
+            linkTitle,
+            linkUrl,
+        });
+
+        switch (result.type) {
+            case ServiceResponseType.SUCCESS:
+                logger.info(
+                    '[v1 :: profile.controller :: createProfileLink()] Success',
+                );
+                const successResponse: ModifyProfileStandardResponseDto = {
+                    message: result.data,
+                    profileId: userId,
+                };
+                res.status(201).send({ data: successResponse });
+                break;
+            case ServiceResponseType.BAD_REQUEST:
+                logger.warn(
+                    '[v1 :: profile.controller :: createProfileLink()] Bad Request',
+                );
+                res.status(400).send({ message: result.message });
+            case ServiceResponseType.NOT_FOUND:
+                logger.warn(
+                    '[v1 :: profile.controller :: createProfileLink()] Not Found',
+                );
+                res.status(404).send({ message: 'Profile not found' });
+                break;
+            default:
+                logger.error(
+                    '[v1 :: profile.controller :: createProfileLink()] Default case',
+                );
+                res.status(500).send({ message: 'Something went wrong :(' });
+                break;
+        }
+    } catch (err) {
+        logger.error(
+            '[v1 :: profile.controller :: createProfileLink()] Error',
+            err,
+        );
+        res.status(500).send({ message: 'Something went wrong :(' });
+    }
+}
+
+/**
+ * [DELETE] /api/v1/profiles/links/:linkId
+ * @param req
+ * - params: {linkId: string}
+ * @param res
+ * - Success: 200 { ModifyProfileStandardResponseDto }
+ * - Not Found: 404 {message: string}
+ * - Error: 500 {message: string}
+ */
+export async function deleteProfileLink(
+    req: Request,
+    res: Response,
+): Promise<void> {
+    logger.info('[v1 :: profile.controller :: deleteProfileLink()] Init');
+    try {
+        // Grab authorization header from request
+        const authHeader = req.headers.authorization;
+        const { data } = await supabase.auth.getUser(authHeader as string);
+        const userId = data?.user?.id;
+        if (!userId) {
+            logger.warn(
+                '[v1 :: profile.controller :: deleteProfileLink()] Could not parse userId from token',
+            );
+            res.status(401).send({ message: 'Unauthorized' });
+            return;
+        }
+
+        // Grab linkId from request params
+        const linkId = req.params.linkId;
+        if (!linkId) {
+            logger.warn(
+                '[v1 :: profile.controller :: deleteProfileLink()] No linkId provided',
+            );
+            res.status(400).send({ message: 'Missing linkId' });
+            return;
+        }
+
+        const profileService = new ProfileService();
+        const result = await profileService.removeLink({
+            userId,
+            linkId,
+        });
+
+        switch (result.type) {
+            case ServiceResponseType.SUCCESS:
+                logger.info(
+                    '[v1 :: profile.controller :: deleteProfileLink()] Success',
+                );
+                const successResponse: ModifyProfileStandardResponseDto = {
+                    message: result.data,
+                    profileId: userId,
+                };
+                res.status(200).send({ data: successResponse });
+                break;
+
+            case ServiceResponseType.NOT_FOUND:
+                logger.info(
+                    '[v1 :: profile.controller :: deleteProfileLink()] Profile not found',
+                );
+                res.status(404).send({ message: 'Profile not found' });
+                break;
+
+            default:
+                logger.error(
+                    '[v1 :: profile.controller :: deleteProfileLink()] Default case',
+                );
+                res.status(500).send({ message: 'Something went wrong :(' });
+                break;
+        }
+    } catch (err) {
+        logger.error(
+            '[v1 :: profile.controller :: deleteProfileLink()] Error',
+            err,
+        );
+        res.status(500).send({ message: 'Something went wrong :(' });
     }
 }

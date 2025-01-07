@@ -1,3 +1,9 @@
+export interface ModifyProjectStandardResponseDto {
+    message: string;
+    projectId: string;
+}
+
+/** GetProjectSearchResult DTOs */
 export interface GetProjectSearchResultsRequestDto {
     sortBy: string;
     roles: string[];
@@ -28,6 +34,13 @@ export interface GetProjectSearchResultsResponseDto {
     createdAt: string;
 }
 
+/** GetProjectDetails DTOs*/
+export interface GetProjectDetailsResponseDtoLink {
+    id: string;
+    linkType: string;
+    linkTitle: string;
+    linkUrl: string;
+}
 export interface GetProjectDetailsResponseDtoPerson {
     id: string;
     name: string;
@@ -37,6 +50,7 @@ export interface GetProjectDetailsResponseDtoCollaborationRequest {
     id: string;
     sender: GetProjectDetailsResponseDtoPerson;
     message: string;
+    isDeclined: boolean;
 }
 export interface GetProjectDetailsResponseDto {
     id: string;
@@ -52,8 +66,10 @@ export interface GetProjectDetailsResponseDto {
     collaborationRequests: GetProjectDetailsResponseDtoCollaborationRequest[];
     favoriteCount: number;
     userHasFavorited: boolean;
+    links: GetProjectDetailsResponseDtoLink[];
 }
 
+/** UpdateProjectDetails DTOs */
 export interface UpdateProjectDetailsRequestDto {
     name?: string;
     description?: string;
@@ -61,4 +77,11 @@ export interface UpdateProjectDetailsRequestDto {
     isOpen?: boolean;
     roles?: string[];
     technologies?: string[];
+}
+
+/** CreateProjectLink DTOs */
+export interface CreateProjectLinkRequestDto {
+    linkType: string;
+    linkTitle: string;
+    linkUrl: string;
 }

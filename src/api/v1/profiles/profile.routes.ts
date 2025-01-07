@@ -1,5 +1,10 @@
 import { Router } from 'express';
-import { getProfileDetails, updateProfileDetails } from './profile.controller';
+import {
+    getProfileDetails,
+    updateProfileDetails,
+    createProfileLink,
+    deleteProfileLink,
+} from './profile.controller';
 
 const router = Router();
 
@@ -22,5 +27,19 @@ router.get('/:userId', getProfileDetails);
  * description - Update a user's profile details
  */
 router.put('/', updateProfileDetails);
+
+/**
+ * method - POST
+ * path - /api/v1/profiles/links
+ * description - Create a new profile link
+ */
+router.post('/links', createProfileLink);
+
+/**
+ * method - DELETE
+ * path - /api/v1/profiles/links
+ * description - Delete a profile link
+ */
+router.delete('/links/:linkId', deleteProfileLink);
 
 export default router;
