@@ -1,6 +1,6 @@
 export type TServerConfig = {
-    db_url: string;
     host: string;
-    log_level: string;
     port: number;
+    // db_url: string;
+    log_level: string;
 };

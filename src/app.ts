@@ -22,7 +22,7 @@ export class InitServer {
         // Setup server configs
         this.server.set('host', config.host);
         this.server.set('port', config.port);
-        this.server.set('db_url', config.db_url);
+        // this.server.set('db_url', config.db_url);
         this.server.set('log_level', config.log_level);
 
         // Setup middlewares
@@ -49,7 +49,9 @@ export class InitServer {
         try {
             // await this.database.connect(process.env.DB_URL!);
             this.server.listen(port, () =>
-                logger.info(`[server]: server is running at ${host}:${port}`),
+                logger.info(
+                    `[server]: collab-hive-api server is running at ${host}:${port}`,
+                ),
             );
         } catch (error) {
             console.error(error);
