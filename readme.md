@@ -111,7 +111,7 @@ src/
 
 ## API Endpoints
 
-Detailed API documentation is available in the [`API.md`](./API.md) file. Below are some key endpoints:
+Detailed API documentation is available in the [Endpoints wiki](https://github.com/Shreyasdbz/collab-hive-api/wiki/Endpoints). Below are some key endpoints:
 
 ### Profiles
 - `GET /api/v1/profiles/:userId`: Get a user's profile.
