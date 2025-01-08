@@ -13,6 +13,7 @@ import { prisma } from '@config/database.config';
 import { GetProjectDetailsResponseDtoCollaborationRequest } from './project.dtos';
 import logger from '@utils/logging.util';
 import { GetProfileDetailsResponseDtoLink } from '../profiles/profile.dtos';
+import { getRedisClient } from '@config/redis.config';
 
 /**
  * Project Service - handles all "Project" table related operations
@@ -20,6 +21,36 @@ import { GetProfileDetailsResponseDtoLink } from '../profiles/profile.dtos';
  * @exports ProjectService
  */
 export default class ProjectService {
+    private redis = getRedisClient();
+    private REDIS_PROJECT_CACHE_KEY_BASIC = 'projects-search:';
+
+    // Invalidates all keys associated with project search
+    private async invalidateProjectsCache() {
+        const pattern = `${this.REDIS_PROJECT_CACHE_KEY_BASIC}*`;
+        let cursor = '0';
+        let keysToDelete: string[] = [];
+        do {
+            const response = await this.redis.scan(cursor, {
+                match: pattern,
+                count: 100,
+            });
+
+            cursor = response[0]; // Next cursor
+            keysToDelete = keysToDelete.concat(response[1]); // Matching keys
+        } while (cursor !== '0');
+
+        // Delete all keys in batches
+        if (keysToDelete.length > 0) {
+            const deletePromises = keysToDelete.map((key) =>
+                this.redis.del(key),
+            );
+            await Promise.all(deletePromises);
+        }
+        logger.info(
+            `[v1 :: project.service :: invalidateProjectsCache()] Cache invalidated`,
+        );
+    }
+
     /**
      * Finds projects with given filters and sorts them
      * @param roles? - Project open roles
@@ -46,7 +77,6 @@ export default class ProjectService {
         limit: number;
     }): Promise<ServiceResponse<GetProjectSearchResultsResponseDto[]>> {
         logger.info('[v1 :: project.service :: find()] Init');
-
         const userFilters: {
             isOpen: boolean;
             rolesOpen?: string[];
@@ -58,6 +88,32 @@ export default class ProjectService {
             complexities: complexities,
             technologies: technologies,
         };
+
+        // Check with Redis cache for this query
+        const queryString = JSON.stringify({
+            roles,
+            complexities,
+            technologies,
+            sortBy,
+            page,
+            limit,
+        });
+        const cacheKey = `${this.REDIS_PROJECT_CACHE_KEY_BASIC}${queryString}`;
+        const cachedProjects = await this.redis.get(cacheKey);
+        if (cachedProjects) {
+            logger.info(
+                `[v1 :: project.service :: find()] Found cached projects for query: ${queryString}`,
+            );
+            return {
+                type: ServiceResponseType.SUCCESS,
+                data: cachedProjects as unknown as GetProjectSearchResultsResponseDto[],
+            };
+        } else {
+            logger.info(
+                `[v1 :: project.service :: find()] No cached projects found for query: ${queryString}`,
+            );
+        }
+
         // Figure out sort by based on the mapping
         const sortByValue = ProjectSearchSortByMapping.get(sortBy);
         const sortByClause: any = {
@@ -198,6 +254,15 @@ export default class ProjectService {
 
             logger.info(
                 `[v1 :: project.service :: find()] ${projectSearchResults.length} projects found with given filters`,
+            );
+
+            // Cache the results
+            await this.redis.set(
+                cacheKey,
+                JSON.stringify(projectSearchResults),
+                {
+                    ex: 60 * 5, // 5 minutes
+                },
             );
             return {
                 type: ServiceResponseType.SUCCESS,
@@ -451,6 +516,8 @@ export default class ProjectService {
             logger.info(
                 `[v1 :: project.service :: createNew()] newProjectId: ${newProjectResult.id}`,
             );
+            // Invalidate the cache
+            await this.invalidateProjectsCache();
             return {
                 type: ServiceResponseType.SUCCESS,
                 data: newProjectResult.id,
@@ -660,6 +727,8 @@ export default class ProjectService {
                 logger.info(
                     '[v1 :: project.service :: updateDetails()] Project updated successfully',
                 );
+                // Invalidate the cache
+                await this.invalidateProjectsCache();
                 return {
                     type: ServiceResponseType.SUCCESS,
                     data: 'Project updated successfully',
@@ -728,6 +797,8 @@ export default class ProjectService {
             logger.info(
                 '[v1 :: project.service :: delete()] Project deleted successfully',
             );
+            // Invalidate the cache
+            await this.invalidateProjectsCache();
             return {
                 type: ServiceResponseType.SUCCESS,
                 data: 'Project deleted.',
