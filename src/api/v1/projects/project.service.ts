@@ -346,7 +346,7 @@ export default class ProjectService {
             function getUserHasFavorited() {
                 if (userId && getProjectResult) {
                     return getProjectResult.favorited_by.some(
-                        (user) => user.id === userId,
+                        (fav) => fav.profile_id === userId,
                     );
                 }
                 return false;
@@ -505,7 +505,7 @@ export default class ProjectService {
             }
 
             const userHasFavoritedProject = projectResult.favorited_by.some(
-                (user) => user.id === userId,
+                (fav) => fav.profile_id === userId,
             );
 
             if (!userHasFavoritedProject) {
