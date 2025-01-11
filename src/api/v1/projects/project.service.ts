@@ -127,11 +127,6 @@ export default class ProjectService {
                       created_at: 'asc',
                   }
                 : {}),
-            ...(sortByValue === 'Most favorites'
-                ? {
-                      favorite_count: 'desc',
-                  }
-                : {}),
         };
 
         try {
@@ -203,6 +198,13 @@ export default class ProjectService {
                     type: ServiceResponseType.NOT_FOUND,
                     message: 'No projects found with given filters',
                 };
+            }
+
+            // If sortBy is favorite, custom sort
+            if (sortByValue === 'Most favorites') {
+                projectsResult.sort((a, b) => {
+                    return b.favorited_by.length - a.favorited_by.length;
+                });
             }
 
             // Map the results to the response DTO
